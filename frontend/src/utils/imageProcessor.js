@@ -235,12 +235,12 @@ export class ImageProcessor {
 
         if (mag > 60) {
           // Angular marker — allowed anywhere (edges exist in sky only at cloud borders)
-          markers.push({ xRatio: cx / this.w, yRatio: cy / this.h, type: 'sharp' });
+          markers.push({ xRatio: cx / this.w, yRatio: cy / this.h, type: 'sharp', mag: Math.round(mag) });
         } else if (mag < 10) {
           // Smooth marker — skip if it falls in a sky-like patch in the upper region
           const inSkyZone = cy < SKY_BOUNDARY_Y;
           if (!inSkyZone || !this._isPatchSky(cx, cy, Math.floor(Math.min(cellW, cellH) / 2))) {
-            markers.push({ xRatio: cx / this.w, yRatio: cy / this.h, type: 'round' });
+            markers.push({ xRatio: cx / this.w, yRatio: cy / this.h, type: 'round', mag: Math.round(mag) });
           }
         }
       }
@@ -248,7 +248,7 @@ export class ImageProcessor {
 
     const sharp = markers.filter(m => m.type === 'sharp').slice(0, Math.ceil(maxMarkers / 2));
     const round = markers.filter(m => m.type === 'round').slice(0, Math.floor(maxMarkers / 2));
-    return [...sharp, ...round];
+    return [...sharp, ...round].map((m, i) => ({ ...m, id: i }));
   }
 
   // ─── v1.1 Methods ─────────────────────────────────────────────────────────
@@ -346,8 +346,23 @@ export class ImageProcessor {
       }
     }
 
-    // Return a spatially-spread sample — slice preserves the top-to-bottom scan order
-    // which naturally distributes across the image after sky rows are removed.
-    return clusters.slice(0, maxClusters);
+    // Spatially spread: divide the image into a grid of zones and pick one
+    // cluster per zone so smooth regions are distributed across the whole image
+    // rather than clustering at the top (where the scan finds them first).
+    const zones = Math.ceil(Math.sqrt(maxClusters));  // e.g. 3 × 3 grid for maxClusters=8
+    const selected = [];
+    for (let zy = 0; zy < zones; zy++) {
+      for (let zx = 0; zx < zones; zx++) {
+        if (selected.length >= maxClusters) break;
+        const yMin = zy / zones,       yMax = (zy + 1) / zones;
+        const xMin = zx / zones,       xMax = (zx + 1) / zones;
+        const inZone = clusters.filter(c =>
+          c.yRatio >= yMin && c.yRatio < yMax &&
+          c.xRatio >= xMin && c.xRatio < xMax
+        );
+        if (inZone.length > 0) selected.push(inZone[Math.floor(inZone.length / 2)]);
+      }
+    }
+    return selected;
   }
 }

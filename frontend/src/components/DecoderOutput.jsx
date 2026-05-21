@@ -151,6 +151,38 @@ export default function DecoderOutput({ result, isScanning, error }) {
                   </span>
                 </div>
 
+                {/* v1.3 — multi-color palette mix */}
+                {result.dimensions_analysis.multi_color_palette?.mix && (() => {
+                  const mix = result.dimensions_analysis.multi_color_palette.mix;
+                  const palette = result.dimensions_analysis.multi_color_palette;
+                  const familyColor = {
+                    Warm: '#ff6b1a', Cool: '#00d4ff', Earth: '#c47c3a',
+                    Contrast: '#ff2d55', Neutral: '#6b7280',
+                    Spiritual: '#a855f7', Luxury: '#ffd700',
+                  };
+                  const accent = familyColor[mix.dominant_family] ?? '#00d4ff';
+                  const colorList = palette.colors.map(c => `${c.label} ${c.percentage}%`).join(' · ');
+                  return (
+                    <>
+                      <div>
+                        <span className="text-[10px]" style={{ color: `${accent}80` }}>PALETTE &gt; </span>
+                        <span className="text-[9px] text-[#6666aa]">{colorList}</span>
+                      </div>
+                      <div
+                        className="border rounded-sm px-2 py-1.5"
+                        style={{ borderColor: `${accent}30`, backgroundColor: `${accent}08` }}
+                      >
+                        <span className="text-[9px] font-bold" style={{ color: accent }}>
+                          MIX: {mix.label} ({mix.dominant_family})
+                        </span>
+                        <p className="text-[9px] mt-0.5 leading-relaxed" style={{ color: `${accent}aa` }}>
+                          {mix.semantic}
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
+
                 <span className="cursor-blink" />
               </>
             )}

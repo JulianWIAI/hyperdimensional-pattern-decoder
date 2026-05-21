@@ -38,6 +38,7 @@ from hd_engine.models import (
     QuantumFieldMetrics,
     SymmetryAnalysis,
 )
+from hd_engine.color import MultiColorDetector, ColorMixInterpreter, MultiColorPalette
 
 
 class HyperdimensionalAnalyzer:
@@ -1685,6 +1686,28 @@ class HyperdimensionalAnalyzer:
         return objects
 
     # ──────────────────────────────────────────────────────────────────────────
+    # Multi-color Palette  (v1.3)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def analyze_multi_color(self) -> MultiColorPalette:
+        """
+        Derive the top-4 dominant colors of the full image and their combined
+        semantic mix description.
+
+        Always operates on the full image array (no sector masking) so the palette
+        reflects the complete visual composition seen by the observer.
+
+        Returns:
+            MultiColorPalette with up to 4 DominantColor entries and an optional
+            ColorMix describing the psychological meaning of the combination.
+        """
+        votes  = self._hsv_sat_votes(self.array)
+        colors = MultiColorDetector().detect(votes, n=4)
+        labels = [c.label for c in colors]
+        mix    = ColorMixInterpreter().interpret(labels)
+        return MultiColorPalette(colors=colors, mix=mix)
+
+    # ──────────────────────────────────────────────────────────────────────────
     # Full Pipeline
     # ──────────────────────────────────────────────────────────────────────────
 
@@ -1734,6 +1757,9 @@ class HyperdimensionalAnalyzer:
         # local_asym must be computed before compute_radar_axes to populate axis 7
         radar_axes  = self.compute_radar_axes(dim5, dim68, dim9, dim10, symmetry, quantum_field, local_asym)
 
+        # v1.3 — multi-color palette (top-4 colors + mix semantics)
+        multi_color = self.analyze_multi_color()
+
         return {
             "dim5":                 dim5,
             "dim68":                dim68,
@@ -1746,7 +1772,8 @@ class HyperdimensionalAnalyzer:
             "color_combo":          color_combo,
             "local_asymmetry":      local_asym,
             "radar_axes":           radar_axes,
-            # v1.3 — resolved sector may differ from the caller's sector_mode
+            "multi_color":          multi_color,
+            # resolved sector may differ from the caller's sector_mode
             "resolved_sector_mode": resolved,
             "sky_masked":           sky_mask is not None and bool(sky_mask.any()),
         }

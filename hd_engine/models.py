@@ -1,5 +1,5 @@
 """
-hd_engine/models.py  —  v1.2
+hd_engine/models.py  —  v1.3
 Pydantic data models — defines the complete JSON schema for the analysis pipeline.
 
 v1.1 additions: ParticleCount, QuantumFieldMetrics, field_warnings, CentralFocusAnalysis
@@ -10,10 +10,14 @@ v1.2 additions (Quantum Grid & Object-Resonance Update):
   - DetectedObject    : Detected region with bounding box + ObjectAnalysis
   - DimensionsAnalysis carries color_combo_value, local_asymmetry, radar_axes (6 values)
   - AnalysisResult carries detected_objects list
+v1.3 additions:
+  - DimensionsAnalysis carries multi_color_palette (top-4 colors + mix semantics)
 """
 
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
+
+from hd_engine.color.models import MultiColorPalette  # v1.3 multi-color palette
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +295,10 @@ class DimensionsAnalysis(BaseModel):
             "Calm/Absorption, Quantum Value, Gravitational Pull, Symmetry-Break Vector"
             "]"
         ),
+    )
+    multi_color_palette: Optional[MultiColorPalette] = Field(      # v1.3
+        default=None,
+        description="Top-4 dominant colors with percentage shares and combined mix semantic",
     )
 
 

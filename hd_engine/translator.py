@@ -26,6 +26,7 @@ from hd_engine.models import (
     QuantumFieldMetrics,
     SymmetryAnalysis,
 )
+from hd_engine.color.models import MultiColorPalette  # v1.3
 
 # ─────────────────────────────────────────────────────────────────────────────
 # v1.0  Sector vocabulary blocks (unchanged)
@@ -967,6 +968,46 @@ def _build_axis_interaction_note(radar_axes: list[float], dim68: Dim68Rhythm) ->
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# v1.3  Multi-color palette note builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_multi_color_note(palette: MultiColorPalette) -> str:
+    """
+    Builds a readable paragraph describing the top-4 color palette and
+    its combined psychological mix meaning.
+
+    Format:
+      COLOR PALETTE: <color1> (pct%) — <semantic_first_sentence> | <color2> (pct%) — ... |
+      PALETTE MIX (<family>): <mix_label> — <mix_semantic_first_two_sentences>
+    """
+    if not palette or not palette.colors:
+        return ""
+
+    # Shorten each color's semantic to its first sentence for inline readability
+    def first_sentence(text: str) -> str:
+        end = text.find(". ")
+        return text[:end + 1] if end != -1 else text
+
+    color_parts = " | ".join(
+        f"{c.label} ({c.percentage}%) — {first_sentence(c.semantic)}"
+        for c in palette.colors
+    )
+    note = f"COLOR PALETTE: {color_parts}."
+
+    if palette.mix:
+        # Include the first two sentences of the mix semantic
+        mix_text = palette.mix.semantic
+        sentences = mix_text.split(". ")
+        short_mix = ". ".join(sentences[:2]) + ("." if len(sentences) > 2 else "")
+        note += (
+            f" PALETTE MIX ({palette.mix.dominant_family}): "
+            f"{palette.mix.label} — {short_mix}"
+        )
+
+    return note
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -993,11 +1034,12 @@ def build_result(analysis_data: dict, sector_mode: str, analyzer=None) -> Analys
     symmetry: SymmetryAnalysis   = analysis_data["symmetry"]
     qfm: QuantumFieldMetrics     = analysis_data["quantum_field"]
     central_dim9: Dim9Geometry   = analysis_data.get("central_dim9", dim9)
-    color_combo: ColorComboValue = analysis_data.get("color_combo")
-    local_asym: LocalAsymmetry   = analysis_data.get("local_asymmetry")
-    radar_axes: list[float]      = analysis_data.get("radar_axes", [])
-    edge_density: float          = analysis_data.get("edge_density", 0.0)
-    sky_masked: bool             = analysis_data.get("sky_masked", False)
+    color_combo: ColorComboValue     = analysis_data.get("color_combo")
+    local_asym: LocalAsymmetry       = analysis_data.get("local_asymmetry")
+    radar_axes: list[float]          = analysis_data.get("radar_axes", [])
+    edge_density: float              = analysis_data.get("edge_density", 0.0)
+    sky_masked: bool                 = analysis_data.get("sky_masked", False)
+    multi_color: MultiColorPalette   = analysis_data.get("multi_color")  # v1.3
 
     # Bug-3 fix: central-zone weighting for CARDS / INDIVIDUUM (uses resolved sector)
     effective_dim9, central_focus = _select_effective_geometry(dim9, central_dim9, effective_sector)
@@ -1030,11 +1072,13 @@ def build_result(analysis_data: dict, sector_mode: str, analyzer=None) -> Analys
     asym_note           = _build_local_asymmetry_note(local_asym) if local_asym else ""
     rhythm_note         = _build_extended_rhythm_note(dim68)
     axis_note           = _build_axis_interaction_note(radar_axes, dim68)
+    multi_color_note    = _build_multi_color_note(multi_color) if multi_color else ""  # v1.3
 
     extra_notes = " ".join(n for n in [combo_note, asym_note, rhythm_note, nuance_note, axis_note] if n)
     full_interpretation = (
         f"{base_interpretation} | QF-ANALYSIS: {quantum_notes}"
         + (f" | V1.35-NUANCE: {extra_notes}" if extra_notes else "")
+        + (f" | PALETTE: {multi_color_note}" if multi_color_note else "")  # v1.3
     )
 
     prognosis      = _build_prognosis(dim68, dim10, qfm, vocab)
@@ -1084,6 +1128,7 @@ def build_result(analysis_data: dict, sector_mode: str, analyzer=None) -> Analys
             color_combo_value=color_combo,
             local_asymmetry=local_asym,
             radar_axes=radar_axes,
+            multi_color_palette=multi_color,  # v1.3
         ),
         decoder_output=DecoderOutput(
             status="DECODE SUCCESSFUL",

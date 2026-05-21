@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.venv/bin/python *)"
+      "Bash(.venv/bin/python *)",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"uvicorn main:app\")"
     ]
   }
 }

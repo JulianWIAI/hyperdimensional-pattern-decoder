@@ -111,6 +111,16 @@ export default function TelemetryPanel({ result, isScanning, selectedObject = nu
         </>
       )}
 
+      {/* ── v1.3: Multi-color palette widget ── */}
+      {!selectedObject && dim?.multi_color_palette && (
+        <>
+          <div className="px-4 py-2 shrink-0">
+            <MultiColorPaletteWidget palette={dim.multi_color_palette} />
+          </div>
+          <div className="h-px bg-[#1a1a3e] mx-4 shrink-0" />
+        </>
+      )}
+
       {/* ── Vector Readout ── */}
       <div className="px-4 py-3 flex flex-col gap-1.5 overflow-y-auto">
         <span className="text-[9px] text-[#4a5568] tracking-widest uppercase mb-1">
@@ -204,6 +214,95 @@ function ColorComboWidget({ combo }) {
         ))}
       </div>
       <p className={`text-[8px] ${s.tag} opacity-70 leading-tight`}>{combo.description}</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.3 — MultiColorPaletteWidget
+// Shows the top-4 dominant colors as a swatch bar with percentages,
+// plus the detected palette mix name and its dominant family badge.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MultiColorPaletteWidget({ palette }) {
+  if (!palette?.colors?.length) return null;
+
+  const familyColor = {
+    Warm:      '#ff6b1a',
+    Cool:      '#00d4ff',
+    Earth:     '#c47c3a',
+    Contrast:  '#ff2d55',
+    Neutral:   '#6b7280',
+    Spiritual: '#a855f7',
+    Luxury:    '#ffd700',
+  };
+
+  const mix    = palette.mix;
+  const accent = mix ? (familyColor[mix.dominant_family] ?? '#00d4ff') : '#00d4ff';
+
+  return (
+    <div className="border border-[#1a1a3e] rounded-sm px-3 py-2">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[9px] text-[#4a5568] tracking-widest uppercase">Color Palette</span>
+        {mix && (
+          <span
+            className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded-sm border"
+            style={{ color: accent, borderColor: `${accent}40`, backgroundColor: `${accent}10` }}
+          >
+            {mix.dominant_family.toUpperCase()}
+          </span>
+        )}
+      </div>
+
+      {/* Swatch bar — full-width proportional color blocks */}
+      <div className="flex w-full h-4 rounded-sm overflow-hidden mb-2">
+        {palette.colors.map((c) => (
+          <div
+            key={c.label}
+            style={{ width: `${c.percentage}%`, backgroundColor: c.hex_color }}
+            title={`${c.label} ${c.percentage}%`}
+          />
+        ))}
+      </div>
+
+      {/* Per-color rows: swatch dot + label + percentage bar */}
+      <div className="flex flex-col gap-1 mb-2">
+        {palette.colors.map((c) => (
+          <div key={c.label} className="flex items-center gap-1.5">
+            <div
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ backgroundColor: c.hex_color, boxShadow: `0 0 4px ${c.hex_color}80` }}
+            />
+            <span className="text-[8px] text-[#8888aa] w-10 shrink-0">{c.label}</span>
+            <div className="flex-1 h-1 bg-[#1a1a3e] rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${c.percentage}%`, backgroundColor: c.hex_color }}
+              />
+            </div>
+            <span className="text-[8px] w-8 text-right shrink-0" style={{ color: c.hex_color }}>
+              {c.percentage}%
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Mix label + short semantic (first sentence only) */}
+      {mix && (
+        <div
+          className="border rounded-sm px-2 py-1.5 mt-1"
+          style={{ borderColor: `${accent}30`, backgroundColor: `${accent}07` }}
+        >
+          <div className="text-[8px] font-bold tracking-wider mb-0.5" style={{ color: accent }}>
+            {mix.label}
+          </div>
+          <p className="text-[8px] leading-tight" style={{ color: `${accent}99` }}>
+            {/* Show first sentence only to keep the widget compact */}
+            {mix.semantic.split('. ')[0]}.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

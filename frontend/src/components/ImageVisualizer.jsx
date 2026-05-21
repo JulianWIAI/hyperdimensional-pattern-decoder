@@ -1,11 +1,13 @@
 /**
- * ImageVisualizer.jsx  —  v1.2
+ * ImageVisualizer.jsx  —  v1.3
  * Centre panel: image display with laser scan FX and canvas overlay.
  *
  * v1.0: red crosshairs (angular) + blue rings (round)
  * v1.1: gravitational aura, connection lines, EM-break border, instability ring
  * v1.2: bounding boxes for detected_objects; click on a box → object focus mode
  *        (highlights selected box in gold, calls onObjectSelect)
+ * v1.3: clickable markers → info tooltip; rhythm-line overlay (TAKT toggle);
+ *        spatial spread fix so blue rings are distributed across the full image
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ImageProcessor } from '../utils/imageProcessor';
@@ -34,6 +36,9 @@ export default function ImageVisualizer({ imageUrl, isScanning, scanComplete, re
   // v1.1: gravitational centroids and circle-cluster positions
   const [gravZones,      setGravZones]      = useState([]);
   const [circleClusters, setCircleClusters] = useState([]);
+  // v1.3: rhythm overlay toggle + marker click-to-info
+  const [showRhythm,      setShowRhythm]      = useState(false);
+  const [clickedMarkerId, setClickedMarkerId] = useState(null);
 
   // ─── Compute all overlay data when image loads ─────────────────────────────
 
@@ -118,33 +123,60 @@ export default function ImageVisualizer({ imageUrl, isScanning, scanComplete, re
       drawFocusZone(ctx, sectorMode, ox, oy, iw, ih);
     }
 
-  }, [scanComplete, markers, gravZones, circleClusters, result, selectedObjectId, sectorMode]);
+    // ── Layer 7: Rhythm lines (v1.3) ─────────────────────────────────────────
+    if (showRhythm) {
+      const takt = result?.dimensions_analysis?.dim_6_8_rhythm?.frequency_takt;
+      if (takt) drawRhythmLines(ctx, takt, ox, oy, iw, ih);
+    }
+
+    // ── Layer 8: Selected marker highlight (v1.3) ────────────────────────────
+    if (clickedMarkerId !== null) {
+      const sel = markers.find(m => m.id === clickedMarkerId);
+      if (sel) drawMarkerHighlight(ctx, ox + sel.xRatio * iw, oy + sel.yRatio * ih, sel.type);
+    }
+
+  }, [scanComplete, markers, gravZones, circleClusters, result, selectedObjectId, sectorMode, showRhythm, clickedMarkerId]);
 
   // ─── v1.2: Bounding box click handler ─────────────────────────────────────
 
   const handleCanvasClick = useCallback((e) => {
-    const objects = result?.detected_objects;
-    if (!objects?.length || !canvasRef.current) return;
+    if (!canvasRef.current) return;
 
     const { ox, oy, iw, ih } = layoutRef.current;
     if (iw === 0 || ih === 0) return;
 
-    const rect  = canvasRef.current.getBoundingClientRect();
+    const rect   = canvasRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // Convert canvas-pixel click to image ratios
-    const xRatio = (clickX - ox) / iw;
-    const yRatio = (clickY - oy) / ih;
-
-    const hit = objects.find(obj => {
-      const [bx1, by1, bx2, by2] = obj.bounding_box;
-      return xRatio >= bx1 && xRatio <= bx2 && yRatio >= by1 && yRatio <= by2;
+    // ── v1.3: Check marker hit first (15 px radius) ───────────────────────────
+    const HIT_RADIUS = 15;
+    const hitMarker = markers.find(m => {
+      const mx = ox + m.xRatio * iw;
+      const my = oy + m.yRatio * ih;
+      return Math.hypot(clickX - mx, clickY - my) < HIT_RADIUS;
     });
+    if (hitMarker) {
+      setClickedMarkerId(prev => prev === hitMarker.id ? null : hitMarker.id);
+      return;
+    }
 
-    // Toggle: clicking the already-selected object deselects it
-    onObjectSelect?.(hit?.id === selectedObjectId ? null : (hit?.id ?? null));
-  }, [result, selectedObjectId, onObjectSelect]);
+    // ── v1.2: Bounding box hit ────────────────────────────────────────────────
+    const objects = result?.detected_objects;
+    const xRatio  = (clickX - ox) / iw;
+    const yRatio  = (clickY - oy) / ih;
+
+    if (objects?.length) {
+      const hit = objects.find(obj => {
+        const [bx1, by1, bx2, by2] = obj.bounding_box;
+        return xRatio >= bx1 && xRatio <= bx2 && yRatio >= by1 && yRatio <= by2;
+      });
+      onObjectSelect?.(hit?.id === selectedObjectId ? null : (hit?.id ?? null));
+    }
+
+    // Clicking empty space clears marker selection
+    setClickedMarkerId(null);
+  }, [markers, result, selectedObjectId, onObjectSelect]);
 
   // ─── Quantum field state flags for JSX badges / border ────────────────────
 
@@ -196,6 +228,17 @@ export default function ImageVisualizer({ imageUrl, isScanning, scanComplete, re
                 label={selectedObjectId ? `OBJ ${selectedObjectId.toUpperCase()}` : `${result.detected_objects.length} OBJECTS`}
               />
             )}
+            {/* v1.3 rhythm toggle */}
+            <button
+              onClick={() => setShowRhythm(r => !r)}
+              className={`text-[9px] tracking-widest uppercase border px-2 py-0.5 rounded-sm transition-colors
+                ${showRhythm
+                  ? 'text-[#00d4ff] border-[#00d4ff]/70 bg-[#00d4ff]/15'
+                  : 'text-[#4a5568] border-[#2a2a4e] bg-transparent hover:text-[#00d4ff]/60 hover:border-[#00d4ff]/30'
+                }`}
+            >
+              TAKT {result.dimensions_analysis.dim_6_8_rhythm.frequency_takt}
+            </button>
           </div>
         )}
       </div>
@@ -220,16 +263,66 @@ export default function ImageVisualizer({ imageUrl, isScanning, scanComplete, re
               <div className="absolute inset-0 vector-grid pointer-events-none" />
             )}
 
-            {/* Canvas: all marker, aura, and bounding-box layers.
-                Pointer events enabled when objects are present so users can click boxes. */}
+            {/* Canvas: all marker, aura, bounding-box, and rhythm layers.
+                Always clickable so users can click markers and bounding boxes. */}
             {scanComplete && (
               <canvas
                 ref={canvasRef}
-                className={`absolute inset-0 ${hasObjects ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                className="absolute inset-0 cursor-crosshair"
                 style={{ width: '100%', height: '100%' }}
-                onClick={hasObjects ? handleCanvasClick : undefined}
+                onClick={handleCanvasClick}
               />
             )}
+
+            {/* v1.3: Marker info tooltip */}
+            {clickedMarkerId !== null && (() => {
+              const marker = markers.find(m => m.id === clickedMarkerId);
+              if (!marker) return null;
+              const { ox, oy, iw, ih } = layoutRef.current;
+              if (iw === 0) return null;
+              const mx = ox + marker.xRatio * iw;
+              const my = oy + marker.yRatio * ih;
+              const isRound     = marker.type === 'round';
+              const accentColor = isRound ? '#00d4ff' : '#ff2d55';
+              const title       = isRound ? '◎ STABILIZATION ATOM' : '⊕ ANGULAR COMPLEMENT';
+              const subtitle    = isRound
+                ? 'Smooth field region — low variance patch'
+                : 'High-contrast edge zone — sharp boundary';
+              const role = isRound
+                ? 'Circular energy stabilizer. Contributes to Circle/Spiral geometry classification.'
+                : 'Angular field marker. Contributes to Triangle/Jagged geometry classification.';
+              const flipLeft    = marker.xRatio > 0.65;
+              const tooltipLeft = flipLeft ? mx - 182 : mx + 16;
+              const tooltipTop  = Math.max(oy + 4, my - 40);
+              return (
+                <div
+                  key={clickedMarkerId}
+                  className="absolute z-50 pointer-events-none w-44"
+                  style={{ left: tooltipLeft, top: tooltipTop }}
+                >
+                  <div
+                    className="rounded-sm border text-[9px] font-mono leading-relaxed p-2"
+                    style={{
+                      backgroundColor: 'rgba(4, 4, 18, 0.93)',
+                      borderColor: `${accentColor}55`,
+                      boxShadow: `0 0 12px ${accentColor}18`,
+                    }}
+                  >
+                    <div className="font-bold tracking-widest mb-1" style={{ color: accentColor }}>
+                      {title}
+                    </div>
+                    <div className="text-[#7777aa] mb-1">{subtitle}</div>
+                    <div className="flex gap-3 text-[8px] text-[#555577] mb-1">
+                      <span>X {Math.round(marker.xRatio * 100)}%</span>
+                      <span>Y {Math.round(marker.yRatio * 100)}%</span>
+                      <span>∇ {marker.mag ?? '—'}</span>
+                    </div>
+                    <div className="text-[#6666aa] leading-tight">{role}</div>
+                    <div className="text-[7px] text-[#333355] mt-1 tracking-wider">CLICK TO DISMISS</div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* EM Break pulsing border overlay (v1.1) */}
             {scanComplete && emBreak && (
@@ -647,6 +740,86 @@ function drawFocusZone(ctx, sectorMode, ox, oy, iw, ih) {
     ctx.restore();
   }
 
+  ctx.restore();
+}
+
+// ─── Canvas Drawing — v1.3 ────────────────────────────────────────────────────
+
+/**
+ * Draws vertical dividing lines for the detected Takt rhythm (e.g. "3-3-3-3").
+ * Each dash in the takt string is one beat; N beats → N-1 dividing lines.
+ */
+function drawRhythmLines(ctx, takt, ox, oy, iw, ih) {
+  const beats = takt.split('-');
+  const n     = beats.length;
+  if (n < 2) return;
+
+  ctx.save();
+
+  // Vertical division lines
+  ctx.strokeStyle = 'rgba(0, 212, 255, 0.55)';
+  ctx.lineWidth   = 1;
+  ctx.setLineDash([4, 5]);
+  ctx.shadowColor = '#00d4ff';
+  ctx.shadowBlur  = 6;
+  ctx.globalAlpha = 0.70;
+
+  for (let i = 1; i < n; i++) {
+    const x = ox + (i / n) * iw;
+    ctx.beginPath(); ctx.moveTo(x, oy); ctx.lineTo(x, oy + ih); ctx.stroke();
+  }
+
+  // Beat label per section (bottom edge)
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.90;
+  ctx.font        = 'bold 9px "JetBrains Mono", monospace';
+
+  for (let i = 0; i < n; i++) {
+    const sectionX = ox + (i / n) * iw;
+    const sectionW = iw / n;
+    const lx = sectionX + sectionW / 2;
+    const ly = oy + ih - 7;
+    const tw = ctx.measureText(beats[i]).width;
+
+    ctx.fillStyle   = 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowBlur  = 0;
+    ctx.fillRect(lx - tw / 2 - 3, ly - 10, tw + 6, 13);
+    ctx.fillStyle   = '#00d4ff';
+    ctx.shadowColor = '#00d4ff';
+    ctx.shadowBlur  = 4;
+    ctx.fillText(beats[i], lx - tw / 2, ly);
+  }
+
+  // Takt header label (top center)
+  const headerText = `TAKT  ${takt}`;
+  ctx.font        = '8px "JetBrains Mono", monospace';
+  const htw = ctx.measureText(headerText).width;
+  ctx.fillStyle   = 'rgba(0, 0, 0, 0.65)';
+  ctx.shadowBlur  = 0;
+  ctx.fillRect(ox + (iw - htw) / 2 - 4, oy + 4, htw + 8, 12);
+  ctx.fillStyle   = 'rgba(0, 212, 255, 0.90)';
+  ctx.shadowColor = '#00d4ff';
+  ctx.shadowBlur  = 5;
+  ctx.fillText(headerText, ox + (iw - htw) / 2, oy + 13);
+
+  ctx.restore();
+}
+
+/**
+ * Draws an outer selection highlight ring around a clicked marker.
+ */
+function drawMarkerHighlight(ctx, x, y, type) {
+  ctx.save();
+  const color = type === 'sharp' ? '#ff2d55' : '#00d4ff';
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 22;
+  ctx.globalAlpha = 0.90;
+  ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth   = 1;
+  ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 
