@@ -229,11 +229,12 @@ class HyperdimensionalAnalyzer:
         )
         orange = orange_mid
 
-        # Pure red: wraps around the hue circle (H 170-180 and H 0-4) at high S+V.
-        # Kept separate from orange so vivid reds are labelled "Red", not "Orange".
+        # Pure red: wraps around the hue circle (H 170-180 and H 0-4) at high S.
+        # V threshold lowered to 80 so dark-side shadows of a red object (apple,
+        # toy) are still captured as red rather than falling into the brown bin.
         red_vivid = (
             chromatic & ((hue >= 170) | (hue < 5))
-            & (sat_255 >= 150.0) & (val_255 >= 150.0)
+            & (sat_255 >= 150.0) & (val_255 >= 80.0)
         )
 
         # Brown / earth tones: any warm-hue pixel NOT already captured as yellow,
@@ -353,6 +354,7 @@ class HyperdimensionalAnalyzer:
         if (
             brown > MIN_W
             and brown >= orange
+            and brown >= red
             and brown >= yellow * 1.5
             and brown >= green
             and brown >= cool
