@@ -123,23 +123,30 @@ class HyperdimensionalAnalyzer:
         that correspond to OpenCV's 0-255 uint8 scale via simple /255 division.
 
         Bin layout (OpenCV hue, [0,180]):
-          yellow  — H 20-35,  S ≥ 0.549 (140/255), V ≥ 0.510 (130/255)   vivid yellow signal
-          orange  — H  5-19,  S ≥ 0.588 (150/255), V ≥ 0.588             vivid orange / fire tones
-          brown   — H  0-18,  warm hue not captured as yellow or orange    earth tones / tan / beige
-          red_wrap— H 170-180 and 0-4, high S+V                           pure red edges
-          green   — H 36-90
-          cyan    — H 90-105
-          blue    — H 105-133
-          violet  — H 133-155
-          pink    — H 155-170
+          yellow    — H 20-35,  S ≥ 0.549 (140/255), V ≥ 0.510 (130/255)  vivid yellow
+          orange    — H  5-19,  S ≥ 0.588 (150/255), V ≥ 0.588            vivid orange / fire
+          red       — H 170-180 and H 0-4, high S+V                        pure red (hue wrap)
+          brown     — H  0-22,  not yellow/orange/red                       earth tones / tan / beige
+          green     — H 36-90
+          cyan      — H 90-105
+          blue      — H 105-133
+          violet    — H 133-155
+          pink      — H 155-170
+          black_frac— fraction of pixels below the dark luminance threshold  (achromatic dark)
+          white_frac— fraction of pixels above the bright-neutral threshold  (achromatic light)
 
-        White exclusion mask (S < 0.118, V > 0.784) removes card text-field
-        backgrounds before any vote is tallied.
+        White exclusion mask (S < 0.118, V > 0.784) removes near-white pixels from
+        all chromatic bins before any saturation-weighted vote is tallied.
+        The same mask is re-used as the white_frac measurement.
 
-        Returns dict keys: yellow, orange, brown, green, cyan, blue, violet, pink, total_sat
+        Returns dict keys:
+            yellow, orange, red, brown, green, cyan, blue, violet, pink,
+            black_frac, white_frac, total_sat
         """
         _EMPTY = {k: 0.0 for k in (
-            "yellow", "orange", "brown", "green", "cyan", "blue", "violet", "pink", "total_sat"
+            "yellow", "orange", "red", "brown",
+            "green", "cyan", "blue", "violet", "pink",
+            "black_frac", "white_frac", "total_sat",
         )}
         if array.size == 0:
             return _EMPTY
@@ -155,9 +162,14 @@ class HyperdimensionalAnalyzer:
         sat   = np.where(cmax > 0, delta / cmax, 0.0).astype(np.float32)  # HSV Sat ∈ [0,1]
         val   = cmax                                                         # HSV Val ∈ [0,1]
 
-        # ── White / off-white exclusion ────────────────────────────────────────
-        # S < 30/255 = 0.118  AND  V > 200/255 = 0.784  →  card text-field background.
-        # These pixels carry zero chromatic information and must not skew the vote.
+        # Black pixels: luminance below the class dark threshold (≈ 38/255 ≈ 0.149).
+        # Computed before the chromatic gate so we capture ALL dark pixels, not only
+        # those that happen to be saturated.
+        black_mask = val < (self._DARK_THRESHOLD / 255.0)
+
+        # White / near-white pixels: low saturation AND high brightness.
+        # Doubles as the chromatic exclusion mask — these pixels carry no hue
+        # information and must not influence any saturation-weighted bin.
         white_mask = (sat < 0.118) & (val > 0.784)
 
         # Chromatic gate: S ≥ 40/255 = 0.157, not white background
@@ -211,34 +223,37 @@ class HyperdimensionalAnalyzer:
         )
 
         # Vivid orange: H 5-19, S ≥ 150, V ≥ 150
-        # Red-wrap zone (H 170-180 or 0-4) also funnels into orange at high S+V.
         orange_mid = (
             chromatic & (hue >= 5) & (hue < 20)
             & (sat_255 >= 150.0) & (val_255 >= 150.0)
         )
-        red_wrap = (
+        orange = orange_mid
+
+        # Pure red: wraps around the hue circle (H 170-180 and H 0-4) at high S+V.
+        # Kept separate from orange so vivid reds are labelled "Red", not "Orange".
+        red_vivid = (
             chromatic & ((hue >= 170) | (hue < 5))
             & (sat_255 >= 150.0) & (val_255 >= 150.0)
         )
-        orange = orange_mid | red_wrap
 
-        # Brown / earth tones: any warm-hue pixel NOT already captured as yellow or orange.
-        # Covers the full brightness range: dark chocolate, medium brown, light tan, beige.
-        # No S/V upper bounds — those were a prior source of false negatives on
-        # lighter earth tones (e.g. feathers or fur at V ≈ 190/255).
+        # Brown / earth tones: any warm-hue pixel NOT already captured as yellow,
+        # orange, or red.  Covers the full brightness range without S/V ceilings.
         warm_hue = chromatic & (hue >= 0) & (hue < 22)
-        brown    = warm_hue & ~yellow & ~orange
+        brown    = warm_hue & ~yellow & ~orange_mid & ~red_vivid
 
         return {
-            "yellow":    _w(yellow),
-            "orange":    _w(orange),
-            "brown":     _w(brown),
-            "green":     _w(chromatic & (hue >= 36)  & (hue < 90)),
-            "cyan":      _w(chromatic & (hue >= 90)  & (hue < 105)),
-            "blue":      _w(chromatic & (hue >= 105) & (hue < 133)),
-            "violet":    _w(chromatic & (hue >= 133) & (hue < 155)),
-            "pink":      _w(chromatic & (hue >= 155) & (hue < 170)),
-            "total_sat": float(sw.sum()),
+            "yellow":     _w(yellow),
+            "orange":     _w(orange),
+            "red":        _w(red_vivid),
+            "brown":      _w(brown),
+            "green":      _w(chromatic & (hue >= 36)  & (hue < 90)),
+            "cyan":       _w(chromatic & (hue >= 90)  & (hue < 105)),
+            "blue":       _w(chromatic & (hue >= 105) & (hue < 133)),
+            "violet":     _w(chromatic & (hue >= 133) & (hue < 155)),
+            "pink":       _w(chromatic & (hue >= 155) & (hue < 170)),
+            "black_frac": float(black_mask.mean()),
+            "white_frac": float(white_mask.mean()),
+            "total_sat":  float(sw.sum()),
         }
 
     def _classify_color_from_votes(
@@ -263,22 +278,63 @@ class HyperdimensionalAnalyzer:
         total_sat = max(votes.get("total_sat", 0.0), 1e-6)
         MIN_W     = total_sat * 0.07   # minimum 7 % of total saturation weight to qualify
 
-        yellow = votes.get("yellow", 0.0)
-        orange = votes.get("orange", 0.0)
-        brown  = votes.get("brown",  0.0)
-        green  = votes.get("green",  0.0)
-        cyan   = votes.get("cyan",   0.0)
-        blue   = votes.get("blue",   0.0)
-        violet = votes.get("violet", 0.0)
-        pink   = votes.get("pink",   0.0)
+        yellow     = votes.get("yellow",     0.0)
+        orange     = votes.get("orange",     0.0)
+        red        = votes.get("red",        0.0)
+        brown      = votes.get("brown",      0.0)
+        green      = votes.get("green",      0.0)
+        cyan       = votes.get("cyan",       0.0)
+        blue       = votes.get("blue",       0.0)
+        violet     = votes.get("violet",     0.0)
+        pink       = votes.get("pink",       0.0)
+        black_frac = votes.get("black_frac", 0.0)
+        white_frac = votes.get("white_frac", 0.0)
 
-        warm   = orange + yellow          # combined warm signal
+        warm   = orange + yellow + red    # combined warm signal (red counts toward warm family)
         cool   = blue + cyan
         pink_m = pink + violet * 0.4      # violet bleeds partially into pink/purple tier
 
+        # ── Strong achromatic override (black / white) ────────────────────────
+        # Applied before any chromatic classification.  If more than 55 % of all
+        # pixels are very dark or very bright-neutral, those achromatic tones
+        # visually dominate the frame regardless of small coloured accents.
+        chromatic_strength = max(warm, cool, green, pink_m, brown)
+        if black_frac > 0.55 and black_frac > white_frac and chromatic_strength < MIN_W * 3.0:
+            vv = round(float(arr.mean()) / 255.0, 3)
+            return (
+                "Blue", "Black",
+                "Black Frequency / Zero-Point Field — maximum depth encoding, gravitational dominance",
+                vv,
+            )
+        if white_frac > 0.55 and chromatic_strength < MIN_W * 3.0:
+            vv = round(float(arr.mean()) / 255.0, 3)
+            return (
+                "Green", "White",
+                "White Frequency / Maximum Luminance Field — open neutral field, spatial authority through void",
+                vv,
+            )
+
         # ── Achromatic / near-neutral fallback ────────────────────────────────
-        # No single bin clears the minimum threshold — fall back to raw channel means.
-        if max(warm, cool, green, pink_m, brown) < MIN_W * 0.6:
+        # Fires when no chromatic bin reaches the minimum saturation-weight threshold.
+        # Black and white are checked here again at a lower fraction threshold (0.35)
+        # because, with very little chromatic content, even a moderate dark or bright
+        # area is the dominant visual impression.
+        if chromatic_strength < MIN_W * 0.6:
+            if black_frac > 0.35 and black_frac >= white_frac:
+                vv = round(float(arr.mean()) / 255.0, 3)
+                return (
+                    "Blue", "Black",
+                    "Black Frequency / Zero-Point Field — maximum depth encoding, gravitational dominance",
+                    vv,
+                )
+            if white_frac > 0.35:
+                vv = round(float(arr.mean()) / 255.0, 3)
+                return (
+                    "Green", "White",
+                    "White Frequency / Maximum Luminance Field — open neutral field, spatial authority through void",
+                    vv,
+                )
+            # Last resort: use the brightest raw RGB channel as a tonal indicator.
             means = [float(arr[:, :, c].mean()) for c in range(3)]
             idx   = int(np.argmax(means))
             labels = [
@@ -359,9 +415,16 @@ class HyperdimensionalAnalyzer:
             vv    = round(float(arr[:, :, 2].mean()) / 255.0, 3)
             return "Blue", "Violet", state, vv
 
+        # ── Red wins (vivid red dominates) ────────────────────────────────────
+        # Checked before generic warm block so pure red is not relabelled Orange.
+        if red > MIN_W and red >= orange * 0.80 and red >= cool and red >= green and red >= yellow:
+            state = "Red Frequency / Maximum Impact Signal — aggressive attention command, high-contrast dominance"
+            vv = round(float(arr[:, :, 0].mean()) / 255.0, 3)
+            return "Orange", "Red", state, vv
+
         # ── Warm wins (orange dominating) ─────────────────────────────────────
         if warm > MIN_W:
-            if yellow > orange * 1.25:
+            if yellow > orange * 1.25 and yellow > red * 1.25:
                 state = "Gold Frequency / Warm-Spectrum Composite — elevated visibility, positive impulse signal"
                 label = "Yellow"
             elif pink_note:
@@ -774,7 +837,17 @@ class HyperdimensionalAnalyzer:
     def analyze_symmetry(self) -> SymmetryAnalysis:
         """
         Compare left half to horizontally mirrored right half.
-        Score > 0.65 → Symmetric; 0.40-0.65 → SUSY pairing.
+
+        Score thresholds (v1.36 — narrowed bands for accuracy):
+          > 0.75  → is_symmetric  (Stability Matrix — true bilateral symmetry)
+          0.50-0.75 → is_susy    (SUSY Pairing — partial duality, adaptive resilience)
+          0.30-0.50 → partial asymmetry (not SUSY, not symmetric)
+          < 0.30  → strong asymmetry
+
+        The old 0.40-0.65 SUSY band was so wide that nearly all natural images
+        landed there, producing the misleading "Perfect Duality" result for
+        clearly asymmetric images.  The new narrower band produces meaningfully
+        differentiated outputs.
         """
         left = self._gray[:, : self.width // 2]
         right = np.fliplr(self._gray[:, self.width // 2 :])
@@ -782,15 +855,20 @@ class HyperdimensionalAnalyzer:
         diff = np.abs(left[:, :w] - right[:, :w])
 
         symmetry_score = max(0.0, min(1.0, round(float(1.0 - diff.mean() / 128.0), 3)))
-        is_symmetric = symmetry_score > 0.65
-        is_susy = (not is_symmetric) and symmetry_score > 0.40
+        is_symmetric = symmetry_score > 0.75
+        is_susy = (not is_symmetric) and symmetry_score > 0.50
 
-        if is_susy:
-            state = "SUSY Pairing — Perfect Duality, Resistant to Interference"
-        elif is_symmetric:
-            state = "Stability Matrix — Predictability and Emotional Stasis"
+        if is_symmetric:
+            state = "Stability Matrix — High Bilateral Symmetry, Predictability and Emotional Stasis"
+        elif is_susy:
+            if symmetry_score > 0.65:
+                state = "SUSY Pairing — Approximate Duality, Moderate Structural Resilience"
+            else:
+                state = "SUSY Pairing — Partial Dimensional Coupling, Limited Interference Resistance"
+        elif symmetry_score > 0.30:
+            state = "Partial Asymmetry — Moderate Dynamic Tension, Directional Preference Emerging"
         else:
-            state = "Asymmetric Field — Dynamic Instability, Unresolved Potential"
+            state = "Asymmetric Field — Dynamic Instability, High Entropic Output, Unresolved Potential"
 
         return SymmetryAnalysis(
             is_symmetric=is_symmetric,
@@ -1114,11 +1192,19 @@ class HyperdimensionalAnalyzer:
         outer_density = float(mag[outer].mean())  if outer.any()  else 0.0
         inner_density = float(mag[~outer].mean()) if (~outer).any() else 0.0
 
-        if outer_density < inner_density * 1.40:
+        # A real card border is visually dense.  If the outer frame has almost no
+        # edges (< 1 %), the image has no card-like border regardless of symmetry,
+        # so we reject early.  This also closes a numeric edge case where
+        # outer_density == inner_density == 0, which made "0 < 0 × 1.4" evaluate
+        # to False and allowed the symmetry check to fire incorrectly.
+        if outer_density < 0.01 or outer_density < inner_density * 1.40:
             return False
 
-        # 3. Symmetry check
-        return self.analyze_symmetry().symmetry_score > 0.62
+        # 3. Symmetry check — raised threshold to 0.72 to avoid misclassifying
+        # portrait photos (which are portrait-oriented and often roughly symmetric)
+        # as trading cards, which caused skin-tone orange to dominate instead of
+        # the actual background colour.
+        return self.analyze_symmetry().symmetry_score > 0.72
 
     def _resolve_sector_mode(self, sector_mode: str) -> str:
         """

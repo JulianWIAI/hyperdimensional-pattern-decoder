@@ -33,7 +33,7 @@ class Dim5Color(BaseModel):
     color_label: str = Field(
         ...,
         description=(
-            "Specific detected hue: Yellow | Orange | Brown | Pink | "
+            "Specific detected hue: Red | Yellow | Orange | Brown | Pink | "
             "Green | Cyan | Blue | Violet"
         ),
     )
@@ -74,8 +74,8 @@ class Dim10Frequency(BaseModel):
 class SymmetryAnalysis(BaseModel):
     """Bilateral symmetry and SUSY pairing results."""
 
-    is_symmetric: bool = Field(..., description="True when symmetry score > 0.65")
-    is_susy: bool = Field(..., description="True when SUSY pairing detected (0.40-0.65)")
+    is_symmetric: bool = Field(..., description="True when symmetry score > 0.75")
+    is_susy: bool = Field(..., description="True when SUSY pairing detected (0.50-0.75)")
     symmetry_score: float = Field(..., ge=0.0, le=1.0)
     semantic_state: str
 

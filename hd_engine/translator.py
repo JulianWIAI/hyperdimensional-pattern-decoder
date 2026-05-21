@@ -35,6 +35,15 @@ SECTOR_VOCABULARY: dict[str, dict[str, str]] = {
     "URBAN_AREA": {
         "label": "Urban Area (Cities)",
         "subject": "the urban field",
+        "color_black": (
+            "anchors the spatial field through gravitational mass — "
+            "dark architectural zones compress pedestrian trajectories "
+            "and enforce territorial authority without explicit signage"
+        ),
+        "color_white": (
+            "broadcasts open civic field — maximum navigational clarity, "
+            "collaborative behaviour triggered, dwell time extended in transit populations"
+        ),
         "color_green": (
             "generates cognitive inertia in pedestrian flows — "
             "suppresses urgency, slows transit behaviour"
@@ -101,6 +110,16 @@ SECTOR_VOCABULARY: dict[str, dict[str, str]] = {
     "INDIVIDUUM": {
         "label": "Individuum (Look / Apparel)",
         "subject": "the subject",
+        "color_black": (
+            "encodes maximum authority and formal dominance — "
+            "the subject becomes a gravitational centre in the social field, "
+            "observers are unconsciously deferred to without verbal cues"
+        ),
+        "color_white": (
+            "projects open-field neutrality and spatial ownership — "
+            "the subject signals control through the absence of chromatic competition, "
+            "triggering an approachability-authority paradox in observers"
+        ),
         "color_green": (
             "suppresses reactivity in observers, projects invisible authority — "
             "the subject becomes the dominant stable node in the environment"
@@ -172,6 +191,14 @@ SECTOR_VOCABULARY: dict[str, dict[str, str]] = {
     "STOCKS": {
         "label": "Stocks (Financial Markets)",
         "subject": "the market signal",
+        "color_black": (
+            "heavy-side pressure dominant — institutional selling detected, "
+            "dark-pool activity elevated, downside momentum building below the visible order book"
+        ),
+        "color_white": (
+            "clean break signal confirmed — institutional accumulation complete, "
+            "volume surge imminent, upward momentum encoding at maximum clarity"
+        ),
         "color_green": (
             "indicates consolidation phase — "
             "institutional accumulation in progress, retail sentiment suppressed"
@@ -246,6 +273,14 @@ SECTOR_VOCABULARY: dict[str, dict[str, str]] = {
     "CARDS": {
         "label": "Cards (Trading Cards)",
         "subject": "the card's visual signal",
+        "color_black": (
+            "encodes maximum rarity authority — dark field dominance compresses the collector's "
+            "perceptual space, amplifying perceived depth and exclusivity across all rarity tiers"
+        ),
+        "color_white": (
+            "signals pristine design exclusivity — clean-field rarity encoding active, "
+            "secondary market premium signal confirmed through visual silence"
+        ),
         "color_green": (
             "encodes perceived rarity suppression — "
             "creates collector stasis, reduces impulse-purchase velocity"
@@ -319,6 +354,16 @@ SECTOR_VOCABULARY: dict[str, dict[str, str]] = {
     "TOYS": {
         "label": "Toys (Play Design)",
         "subject": "the play object",
+        "color_black": (
+            "encodes premium material quality and adult-collector desirability — "
+            "suppresses impulsive child play, elevates perceived value "
+            "and mystery appeal in the target demographic"
+        ),
+        "color_white": (
+            "activates blank-slate creative play mode — "
+            "triggers maximum imaginative projection, lowest play-session resistance, "
+            "and the broadest narrative customisation range"
+        ),
         "color_green": (
             "triggers calm play state — "
             "reduces aggressive play patterns, extends session duration"
@@ -410,7 +455,10 @@ def _build_interpretation(
     # their steganographic *category* is warm-urgency — the semantic_state string
     # already carries the hue-specific nuance (Yellow Frequency, Earth-Band).
     color_key = {
+        "Black":  "color_black",
+        "White":  "color_white",
         "Orange": "color_orange",
+        "Red":    "color_orange",   # red maps to the warm/orange vocabulary family
         "Yellow": "color_orange",
         "Brown":  "color_orange",
         "Pink":   "color_orange",
@@ -434,15 +482,26 @@ def _build_interpretation(
         f"by ×{dim10.intensity_multiplier:.2f}."
     )
 
-    if symmetry.is_susy:
+    if symmetry.is_symmetric:
         sym_note = (
-            " SUSY pairing confirmed: opposing dimensional vectors cancel mutual interference — "
-            "system exhibits extreme structural resilience."
-        )
-    elif symmetry.is_symmetric:
-        sym_note = (
-            " Stability Matrix active: bilateral symmetry enforces emotional stasis "
+            " Stability Matrix active: high bilateral symmetry enforces emotional stasis "
             "and environmental predictability."
+        )
+    elif symmetry.is_susy:
+        if symmetry.symmetry_score > 0.65:
+            sym_note = (
+                " SUSY pairing detected: approximate dimensional coupling — "
+                "moderate structural resilience, non-perfect mirror field."
+            )
+        else:
+            sym_note = (
+                " SUSY pairing detected: partial dimensional coupling — "
+                "limited interference resistance, dynamic tension present."
+            )
+    elif symmetry.symmetry_score > 0.30:
+        sym_note = (
+            " Partial asymmetry detected: moderate dynamic tension — "
+            "field has a directional preference but remains structurally coherent."
         )
     else:
         sym_note = (
@@ -668,6 +727,16 @@ def _adjust_qv_for_nuance(
     semantic = dim5.semantic_state.lower()
     curv     = dim9.edge_curvature_index
 
+    # ── 0. Black / White achromatic fields ────────────────────────────────────
+    # Black encodes authority and premium depth — moderate QV uplift.
+    # White encodes clean neutrality — slight positive adjustment.
+    if "black frequency" in semantic or "zero-point field" in semantic:
+        base = 1.20 + dim68.coherence_score * 0.35
+        return round(min(max(base, 1.10), 1.85), 3)
+    if "white frequency" in semantic or "maximum luminance field" in semantic:
+        base = 1.00 + dim68.coherence_score * 0.25
+        return round(min(max(base, 0.90), 1.30), 3)
+
     # ── 1. Holographic foil ────────────────────────────────────────────────────
     if qfm.electromagnetic_break_detected and qfm.luxury_particle_detected and curv > 0.52:
         return round(max(qv, 2.85), 3)
@@ -695,6 +764,13 @@ def _adjust_qv_for_nuance(
             if edge_density > 0.18:
                 return round(max(qv, 1.90), 3)
 
+    # ── 2b. Red frequency — applies to all sectors ────────────────────────────
+    # Pure red is aggressive and high-contrast; gives a moderate QV uplift in any
+    # sector context, not just CARDS.
+    if "red frequency" in semantic or "maximum impact signal" in semantic:
+        base = 1.10 + dim68.coherence_score * 0.40
+        return round(min(base, 1.80), 3)
+
     # ── 3. Generic muted / earthy suppression (any sector) ────────────────────
     is_muted = (
         (color_combo is not None and color_combo.label == "LOW-VALUE")
@@ -717,7 +793,19 @@ def _build_nuance_note(dim5: Dim5Color, adjusted_qv: float, base_qv: float) -> s
     semantic = dim5.semantic_state.lower()
     lines: list[str] = []
 
-    if "high-luminance resonance" in semantic:
+    if "black frequency" in semantic or "zero-point field" in semantic:
+        lines.append(
+            "Black Frequency / Zero-Point Field — gravitational dominance active: "
+            "maximum depth encoding, authority field without chromatic competition"
+        )
+    elif "white frequency" in semantic or "maximum luminance field" in semantic:
+        lines.append(
+            "White Frequency / Maximum Luminance Field — open-field authority signal: "
+            "spatial ownership through chromatic void, approachability-dominance paradox active"
+        )
+    elif "red frequency" in semantic or "maximum impact signal" in semantic:
+        lines.append("Red Frequency / Maximum Impact Signal — peak aggression encoding, immediate high-contrast dominance field")
+    elif "high-luminance resonance" in semantic:
         lines.append("Yellow Frequency / High-Luminance Resonance — stable energy field, maximum visibility without aggression peak")
     elif "gold frequency" in semantic or "warm-spectrum" in semantic:
         lines.append("Gold Frequency active — Wealth-Attractor encoded, status multiplier elevated")
